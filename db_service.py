@@ -128,6 +128,13 @@ class DBService:
         self._initialized = False
 
     def init(self):
+        self._contact_db = None
+        self._session_db = None
+        self._media_db = None
+        self._message_dbs = []
+        self._name2id_cache = {}
+        self._contact_cache = {}
+        self._chatroom_cache = {}
         self._discover_dbs()
         self._load_name2id()
         self._load_contacts()
@@ -145,7 +152,7 @@ class DBService:
                 elif f == "session.decrypted.db" or f == "session.db":
                     if f.endswith(".decrypted.db"):
                         self._session_db = path
-                elif f.startswith("message_") and f.endswith(".decrypted.db"):
+                elif (f.startswith("message_") or f.startswith("biz_message_")) and f.endswith(".decrypted.db"):
                     self._message_dbs.append(path)
                 elif f == "hardlink.decrypted.db":
                     self._media_db = path
@@ -158,7 +165,10 @@ class DBService:
 
     def _open_db(self, path: str) -> sqlite3.Connection:
         temp_path = os.path.join(self._temp_dir, os.path.basename(path))
-        if not os.path.exists(temp_path):
+        if (
+            not os.path.exists(temp_path)
+            or os.path.getmtime(path) > os.path.getmtime(temp_path)
+        ):
             shutil.copy2(path, temp_path)
 
         conn = sqlite3.connect(temp_path, check_same_thread=False)
@@ -231,7 +241,8 @@ class DBService:
 
     def get_messages(self, talker: str, start_time: Optional[str] = None,
                      end_time: Optional[str] = None, sender: str = "",
-                     keyword: str = "", limit: int = 50, offset: int = 0) -> Tuple[List[Message], int]:
+                     keyword: str = "", limit: int = 50, offset: int = 0,
+                     order: str = "desc") -> Tuple[List[Message], int]:
         if not talker:
             return [], 0
 
@@ -249,7 +260,8 @@ class DBService:
             except Exception as e:
                 print(f"[DBService] Error querying {db_path}: {e}")
 
-        all_messages.sort(key=lambda m: m.seq)
+        reverse = order.lower() != "asc"
+        all_messages.sort(key=lambda m: m.seq, reverse=reverse)
 
         total = len(all_messages)
         if limit > 0:

@@ -145,6 +145,18 @@ def find_decrypted_path(db_path):
     return db_path + ".decrypted.db"
 
 
+def _source_last_write(db_path):
+    paths = [db_path, db_path + "-wal", db_path + "-shm"]
+    return max((os.path.getmtime(path) for path in paths if os.path.exists(path)), default=0)
+
+
+def needs_decrypt(db_path):
+    decrypted_path = find_decrypted_path(db_path)
+    if not os.path.exists(decrypted_path):
+        return True
+    return _source_last_write(db_path) > os.path.getmtime(decrypted_path)
+
+
 def auto_decrypt(base_dir, keys_hex=None):
     if keys_hex is None:
         keys_hex = scan_keys_from_memory()
@@ -161,7 +173,7 @@ def auto_decrypt(base_dir, keys_hex=None):
 
     for db_path in db_files:
         decrypted_path = find_decrypted_path(db_path)
-        if os.path.exists(decrypted_path):
+        if not needs_decrypt(db_path):
             skipped += 1
             continue
 
@@ -191,8 +203,7 @@ def ensure_decrypted(base_dir, keys_hex=None):
     db_files = find_db_files(base_dir)
     need_decrypt = []
     for db_path in db_files:
-        decrypted_path = find_decrypted_path(db_path)
-        if not os.path.exists(decrypted_path):
+        if needs_decrypt(db_path):
             need_decrypt.append(db_path)
 
     if not need_decrypt:
